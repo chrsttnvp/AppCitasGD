@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  # El servicio del backend
+  backend:
+    build: ./backend
+    container_name: mevn-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/usr/src/app
+      - /usr/src/app/node_modules
+
+  # El servicio del frontend
+  frontend:
+    build: ./frontend
+    container_name: mevn-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80" # Exponemos el Nginx del contenedor en el puerto 8080 de nuestra máquina
+    depends_on:
+      - backend
