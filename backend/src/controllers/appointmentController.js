@@ -106,6 +106,10 @@ exports.createAppointment = async (req, res) => {
         };
 
         const result = await citasCollection.insertOne(newAppointment);
+
+        // En una aplicación real, aquí llamaríamos a un servicio de email (como SendGrid, Nodemailer, etc.)
+        // Para esta prueba, solo mostraremos un log en la consola del servidor.
+        console.log(`📧 SIMULACIÓN: Enviando email de confirmación para la cita de '${newAppointment.patientName}' con el Dr. '${newAppointment.doctorName}' para el día ${newAppointment.date.toLocaleDateString()}.`);
         res.status(201).json({ ...newAppointment, _id: result.insertedId });
 
     } catch (error) {
