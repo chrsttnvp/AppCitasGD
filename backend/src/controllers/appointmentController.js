@@ -82,21 +82,18 @@ exports.createAppointment = async (req, res) => {
             return res.status(400).json({ message: 'La hora de fin debe ser posterior a la hora de inicio.' });
         }
 
-
-       // const appointmentDate = new Date(date); // 'date' ahora es un string ISO completo
-       const appointmentDate = new Date(`${date}T${startTime}`); 
-       const now = new Date();
-
-        if (appointmentDate < now) {
+        // --- VALIDACIÓN (Usa fecha y hora combinadas) ---
+        const appointmentDateTime = new Date(`${date}T${startTime}`);
+        if (appointmentDateTime < new Date()) {
             return res.status(400).json({ message: 'No se puede agendar una cita en una fecha y hora que ya ha pasado.' });
         }
-
         
-        // Para la búsqueda, normalizamos la fecha a medianoche UTC
-        const searchDate = new Date(appointmentDate);
-        searchDate.setUTCHours(0, 0, 0, 0);
+        // --- ALMACENAMIENTO (Usa SOLO la fecha para normalizar) ---
+        // 'date' es el string "YYYY-MM-DD" que viene del frontend.
+        // Esto crea una fecha en UTC a medianoche del día correcto, sin contaminación de la hora.
+        const storageDate = new Date(`${date}T00:00:00.000Z`);
 
-        const existingAppointments = await citasCollection.find({ doctorName, date: searchDate }).toArray();
+        const existingAppointments = await citasCollection.find({ doctorName, date: storageDate }).toArray();
         const conflictingAppointments = findConflictingAppointments({ startTime, endTime }, existingAppointments);
 
         if (conflictingAppointments.length > 0) {
@@ -104,7 +101,7 @@ exports.createAppointment = async (req, res) => {
         }
 
         const newAppointment = {
-            patientName, doctorName, date: searchDate, startTime, endTime, reason,
+            patientName, doctorName, date: storageDate, startTime, endTime, reason,
             status: status || 'scheduled', createdAt: new Date(), updatedAt: new Date(),
         };
 
@@ -116,7 +113,6 @@ exports.createAppointment = async (req, res) => {
         res.status(500).json({ message: 'Error interno del servidor al crear la cita.' });
     }
 };
-
 exports.getAppointments = async (req, res) => {
     const db = req.db;
     const { startDate, endDate, doctorName, status } = req.query; // 'startDate' y 'endDate'
@@ -201,63 +197,61 @@ exports.getAppointmentById = async (req, res) => {
 
 // Actualizar una cita existente
 exports.updateAppointment = async (req, res) => {
-const { id } = req.params;
-const { patientName, doctorName, date, startTime, endTime, reason, status } = req.body;
-const db = req.db;
+    const { id } = req.params;
+    const { patientName, doctorName, date, startTime, endTime, reason, status } = req.body;
+    const db = req.db;
 
-if (!ObjectId.isValid(id)) return res.status(400).json({ message: 'ID de cita inválido.' });
+    if (!ObjectId.isValid(id)) return res.status(400).json({ message: 'ID de cita inválido.' });
 
-try {
-    if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
-        return res.status(400).json({ message: 'La hora de fin debe ser posterior a la hora de inicio.' });
-    }
-    
-    if (status === 'scheduled') {
-        const appointmentDate = new Date(`${date}T${startTime}`);
-        if (appointmentDate < new Date()) {
-            return res.status(400).json({ message: 'No se puede reprogramar una cita a una fecha y hora que ya ha pasado.' });
+    try {
+        if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+            return res.status(400).json({ message: 'La hora de fin debe ser posterior a la hora de inicio.' });
         }
+        
+        if (status === 'scheduled') {
+            const appointmentDateTime = new Date(`${date}T${startTime}`);
+            if (appointmentDateTime < new Date()) {
+                return res.status(400).json({ message: 'No se puede reprogramar una cita a una fecha y hora que ya ha pasado.' });
+            }
+        }
+
+        const storageDate = new Date(`${date}T00:00:00.000Z`);
+
+        const appointmentsCollection = db.collection('citas');
+        const existingAppointments = await appointmentsCollection.find({
+            doctorName,
+            date: storageDate,
+            _id: { $ne: new ObjectId(id) },
+        }).toArray();
+        
+        const conflictingAppointments = findConflictingAppointments({ startTime, endTime }, existingAppointments);
+
+        if (conflictingAppointments.length > 0) {
+            return res.status(409).json({ message: 'Conflicto de horario al actualizar.', conflicts: conflictingAppointments });
+        }
+        
+        const updatedAppointmentData = {
+            patientName, doctorName, date: storageDate, startTime, endTime, reason,
+            status, updatedAt: new Date(),
+        };
+
+        const updateResult = await appointmentsCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: updatedAppointmentData }
+        );
+
+        if (updateResult.matchedCount === 0) {
+            return res.status(404).json({ message: 'Cita no encontrada para actualizar.' });
+        }
+
+        const updatedAppointment = await appointmentsCollection.findOne({ _id: new ObjectId(id) });
+        res.status(200).json(updatedAppointment);
+
+    } catch (error) {
+        console.error('Error al actualizar cita:', error);
+        res.status(500).json({ message: 'Error interno del servidor al actualizar la cita.' });
     }
-
-    const searchDate = new Date(date);
-    searchDate.setUTCHours(0, 0, 0, 0);
-
-    const appointmentsCollection = db.collection('citas');
-    const existingAppointments = await appointmentsCollection.find({
-        doctorName,
-        date: searchDate,
-        _id: { $ne: new ObjectId(id) },
-    }).toArray();
-    
-    const conflictingAppointments = findConflictingAppointments({ startTime, endTime }, existingAppointments);
-
-    if (conflictingAppointments.length > 0) {
-        return res.status(409).json({ message: 'Conflicto de horario al actualizar.', conflicts: conflictingAppointments });
-    }
-    
-    const updatedAppointmentData = {
-        patientName, doctorName, date: searchDate, startTime, endTime, reason,
-        status, updatedAt: new Date(),
-    };
-
-    const updateResult = await appointmentsCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: updatedAppointmentData }
-    );
-
-    if (updateResult.matchedCount === 0) {
-        return res.status(404).json({ message: 'Cita no encontrada para actualizar.' });
-    }
-
-    const updatedAppointment = await appointmentsCollection.findOne({ _id: new ObjectId(id) });
-    res.status(200).json(updatedAppointment);
-
-} catch (error) {
-    console.error('Error al actualizar cita:', error);
-    res.status(500).json({ message: 'Error interno del servidor al actualizar la cita.' });
-}
-}
-
+};
 //Eliminar una cita
 
 exports.deleteAppointment = async (req, res) => {

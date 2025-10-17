@@ -15,14 +15,12 @@ const totalPages = ref(1);
 const limit = ref(5); // Cuántas citas mostrar por página
 
 // Filtros
-//const filterDate = ref('');
-//const filterDoctor = ref('');
-//const filterStatus = ref('');
-//const statuses = ['all', 'scheduled', 'completed', 'cancelled'];
-const filterStartDate = ref(''); // Reemplazamos filterDate por startDate
-const filterEndDate = ref('');   // y añadimos endDate
+
+const filterStartDate = ref('');
+const filterEndDate = ref('');
 const filterDoctor = ref('');
-const filterStatus = ref('');
+const filterStatus = ref(''); // Esta variable guarda el estado seleccionado
+const statuses = ['all', 'scheduled', 'completed', 'cancelled']; 
 
 
 const fetchAppointments = async () => {
@@ -143,6 +141,8 @@ watch(filterStatus, resetAndFetch);
     <!-- Sección de Filtros y Crear Cita -->
     <div class="bg-white shadow-lg rounded-lg p-6 mb-8">
       <h2 class="text-xl font-bold mb-4 text-gray-700">Filtros</h2>
+    
+  
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <!-- INICIO: Reemplazo del filtro de fecha -->
         <div>
